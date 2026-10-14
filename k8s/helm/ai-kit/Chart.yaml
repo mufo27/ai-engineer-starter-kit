@@ -1,0 +1,13 @@
+apiVersion: v2
+name: ai-kit
+description: AI Engineer Starter Kit — FastAPI backend + Next.js dashboard + pgvector + Redis
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - llm
+  - rag
+  - fastapi
+  - nextjs
+maintainers:
+  - name: mufo27

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ai-kit.fullname" . }}-config
+  labels:
+    {{- include "ai-kit.labels" . | nindent 4 }}
+data:
+  APP_ENV: {{ .Values.config.appEnv | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  OPENAI_BASE_URL: {{ .Values.config.openaiBaseUrl | quote }}
+  ANTHROPIC_BASE_URL: {{ .Values.config.anthropicBaseUrl | quote }}
+  GEMINI_BASE_URL: {{ .Values.config.geminiBaseUrl | quote }}
+  DEFAULT_TOKEN_BUDGET: {{ .Values.config.defaultTokenBudget | quote }}
+  RATE_LIMIT_QPS: {{ .Values.config.rateLimitQps | quote }}
+  REDIS_URL: {{ default (printf "redis://%s-redis:6379/0" (include "ai-kit.fullname" .)) .Values.secrets.redisUrl | quote }}
+  DATABASE_URL: {{ default (printf "postgresql+asyncpg://%s:%s@%s-postgres:5432/%s" .Values.postgres.user .Values.postgres.password (include "ai-kit.fullname" .) .Values.postgres.database) .Values.secrets.databaseUrl | quote }}

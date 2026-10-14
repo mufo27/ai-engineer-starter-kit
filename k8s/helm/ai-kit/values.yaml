@@ -1,0 +1,83 @@
+# Default values for the ai-kit chart.
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  pullPolicy: IfNotPresent
+
+imageCredentials:
+  create: false
+  registry: ghcr.io
+  username: ""
+  password: ""   # supply via --set or a secret, never commit
+
+api:
+  repository: ghcr.io/mufo27/ai-kit-api
+  tag: latest
+  replicas: 2
+  port: 8000
+  resources:
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits: { cpu: "1", memory: "1Gi" }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+web:
+  repository: ghcr.io/mufo27/ai-kit-web
+  tag: latest
+  replicas: 1
+  port: 3000
+  resources:
+    requests: { cpu: "50m", memory: "128Mi" }
+    limits: { cpu: "500m", memory: "512Mi" }
+
+postgres:
+  image: pgvector/pgvector:pg16
+  user: kit
+  password: kit_dev_password
+  database: ai_kit
+  size: 5Gi
+  storageClass: ""
+
+redis:
+  image: redis:7-alpine
+  size: 1Gi
+
+# Non-secret config (env). Secrets live in `secrets` below.
+config:
+  appEnv: production
+  logLevel: INFO
+  openaiBaseUrl: https://api.openai.com/v1
+  anthropicBaseUrl: https://api.anthropic.com
+  geminiBaseUrl: https://generativelanguage.googleapis.com
+  defaultTokenBudget: "1000000"
+  rateLimitQps: "10"
+
+# Secret env values. Provide at install time; rendered into a Secret.
+secrets:
+  jwtSecret: "change-me-in-production"
+  databaseUrl: ""      # e.g. postgresql+asyncpg://kit:pw@ai-kit-postgres:5432/ai_kit
+  redisUrl: ""         # e.g. redis://ai-kit-redis:6379/0
+  openaiApiKey: ""
+  anthropicApiKey: ""
+  geminiApiKey: ""
+
+ingress:
+  enabled: true
+  className: nginx
+  host: ai-kit.local
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: ai-kit-tls
+
+serviceAccount:
+  create: true
+  name: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

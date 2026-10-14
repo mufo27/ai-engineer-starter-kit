@@ -1,0 +1,18 @@
+AI Engineer Starter Kit deployed as {{ .Release.Name }}.
+
+Dashboard:  http://{{ .Values.ingress.host }}
+API:        http://api.{{ .Values.ingress.host }}
+
+Health:     curl http://api.{{ .Values.ingress.host }}/health
+Chat:       curl -X POST http://api.{{ .Values.ingress.host }}/v1/chat \
+              -H "x-api-key: dev-key-123" -H "content-type: application/json" \
+              -d '{"messages":[{"role":"user","content":"hello"}]}'
+
+Set real provider keys at install time (never commit them):
+  helm upgrade --install ai-kit ./k8s/helm/ai-kit \
+    --set secrets.geminiApiKey=... --set secrets.openaiApiKey=... \
+    --set secrets.jwtSecret=$(openssl rand -hex 32)
+
+NOTE: 'dev-key-123' is an in-memory demo key (development env only).
+In production (APP_ENV != development) the app uses SQL-backed API keys —
+create real tenants/keys via the database.
