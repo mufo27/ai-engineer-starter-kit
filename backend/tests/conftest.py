@@ -7,6 +7,7 @@ from app.core.auth import Principal
 from app.core.cost import InMemoryUsageStore, UsageTracker
 from app.core.rate_limit import InMemoryRateLimiter, MonthlyQuota
 from app.services.llm_router import LLMRouter
+from app.services.providers import MockProvider, ProviderRegistry
 
 
 @pytest.fixture
@@ -20,8 +21,8 @@ def principal() -> Principal:
 
 @pytest.fixture
 def router_mock() -> LLMRouter:
-    # No real clients -> mock provider path
-    return LLMRouter(openai_client=None, anthropic_client=None, strict=False)
+    # Registry with only mock -> router falls back to mock (no real provider)
+    return LLMRouter(ProviderRegistry([MockProvider()]), strict=False)
 
 
 @pytest.fixture

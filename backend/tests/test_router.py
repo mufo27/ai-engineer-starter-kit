@@ -61,8 +61,9 @@ def test_cost_math():
 
 @pytest.mark.asyncio
 async def test_strict_mode_raises_without_provider():
-    strict = LLMRouter(openai_client=None, anthropic_client=None, strict=True)
     from app.core.errors import NoProviderAvailableError
+    from app.services.providers import MockProvider, ProviderRegistry
 
+    strict = LLMRouter(ProviderRegistry([MockProvider()]), strict=True)
     with pytest.raises(NoProviderAvailableError):
         await strict.chat([ChatMessage(role="user", content="hi")])

@@ -1,13 +1,12 @@
-"""LLM Router — the core of the kit.
+"""LLM Router — provider-agnostic orchestration on top of the ProviderRegistry.
 
 Responsibilities:
-  1. Classify a request into a task type (simple / complex / reasoning / cheap).
-  2. Route to the cheapest capable provider/model that is currently healthy.
-  3. Wrap every call with retry + circuit breaker.
-  4. Count tokens + compute cost (fail-closed: no provider -> 503 in strict mode).
+  1. Classify a request into a task type (classify/simple/reasoning/extract).
+  2. Rank catalog models by how well their tier fits the task + price.
+  3. Filter to models whose provider is registered, available, and breaker-open.
+  4. Call the provider (retry/circuit-breaker), count cost, return a result.
 
-Providers implement a tiny `complete()` interface so the router is provider-agnostic
-and trivially testable (a MockProvider is always available).
+Adding a vendor no longer touches this file — register a provider in deps.py.
 """
 from __future__ import annotations
 
@@ -16,7 +15,20 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from app.core.circuit_breaker import BreakerRegistry
-from app.core.errors import CircuitOpenError, NoProviderAvailableError
+from app.core.errors import NoProviderAvailableError
+from app.services.providers.base import (
+    ChatMessage,
+    ModelSpec,
+    compute_cost,
+    estimate_tokens,
+)
+from app.services.providers.registry import ProviderRegistry
+
+# Re-exported for backward-compatible imports elsewhere.
+__all__ = [
+    "CATALOG", "ChatMessage", "LLMResult", "LLMRouter", "ModelSpec",
+    "TaskType", "classify_task", "compute_cost", "estimate_tokens",
+]
 
 
 class TaskType(StrEnum):
@@ -26,33 +38,33 @@ class TaskType(StrEnum):
     EXTRACT = "extract"     # structured output
 
 
-# Static price table (USD per 1M tokens). Update as provider pricing changes.
-@dataclass(frozen=True)
-class ModelSpec:
-    provider: str
-    model: str
-    input_price_per_m: float
-    output_price_per_m: float
-    max_output_tokens: int = 1024
-    tier: int = 1  # 1=cheap, 2=balanced, 3=smart
-
-
+# ── Model catalog (provider, model, in $/M, out $/M, max_out, tier) ──────────
+# Prices are representative; keep current with provider pricing pages.
 MOCK = ModelSpec("mock", "mock", 0.0, 0.0, 1024, tier=1)
 
 CATALOG: dict[str, ModelSpec] = {
+    # OpenAI
     "gpt-4o-mini": ModelSpec("openai", "gpt-4o-mini", 0.15, 0.60, 1024, tier=1),
     "gpt-4o": ModelSpec("openai", "gpt-4o", 2.50, 10.00, 2048, tier=3),
+    # Anthropic
     "claude-3-5-haiku": ModelSpec("anthropic", "claude-3-5-haiku-20241022", 0.80, 4.00, 1024, tier=2),
     "claude-3-5-sonnet": ModelSpec("anthropic", "claude-3-5-sonnet-20241022", 3.00, 15.00, 2048, tier=3),
+    # Google Gemini (native)
+    "gemini-3.5-flash-lite": ModelSpec("gemini", "gemini-3.5-flash-lite", 0.10, 0.40, 1024, tier=1),
+    "gemini-3.8-flash": ModelSpec("gemini", "gemini-3.8-flash", 0.30, 2.50, 1024, tier=2),
+    "gemini-3.1-pro-preview": ModelSpec("gemini", "gemini-3.1-pro-preview", 1.25, 10.00, 2048, tier=3),
+    # OpenAI-compatible extras (only routable if the provider is registered in deps)
+    "llama-3.3-70b-versatile": ModelSpec("groq", "llama-3.3-70b-versatile", 0.59, 0.79, 1024, tier=2),
+    "deepseek-chat": ModelSpec("deepseek", "deepseek-chat", 0.27, 1.10, 1024, tier=1),
     "mock": MOCK,
 }
 
-# Which models are eligible per task, ordered cheapest-first.
-ROUTING_TABLE: dict[TaskType, list[str]] = {
-    TaskType.CLASSIFY: ["gpt-4o-mini", "claude-3-5-haiku"],
-    TaskType.EXTRACT: ["gpt-4o-mini", "claude-3-5-haiku"],
-    TaskType.SIMPLE: ["gpt-4o-mini", "claude-3-5-haiku", "gpt-4o"],
-    TaskType.REASONING: ["claude-3-5-sonnet", "gpt-4o"],
+# Target tier per task type.
+TASK_TIER: dict[TaskType, int] = {
+    TaskType.CLASSIFY: 1,
+    TaskType.EXTRACT: 1,
+    TaskType.SIMPLE: 2,
+    TaskType.REASONING: 3,
 }
 
 _KEYWORDS_REASONING = ("analyze", "prove", "architect", "design", "reason", "multi-step", "tradeoff")
@@ -61,11 +73,7 @@ _KEYWORDS_EXTRACT = ("extract", "parse", "structured", "json")
 
 
 def classify_task(prompt: str, *, force: TaskType | None = None) -> TaskType:
-    """Heuristic task classifier. Deterministic + zero-cost.
-
-    A production kit would optionally route this through a tiny model; the
-    heuristic keeps the default path cheap and testable.
-    """
+    """Deterministic, zero-cost heuristic task classifier."""
     if force:
         return force
     p = prompt.lower()
@@ -76,12 +84,6 @@ def classify_task(prompt: str, *, force: TaskType | None = None) -> TaskType:
     if any(k in p for k in _KEYWORDS_REASONING) or len(p) > 800:
         return TaskType.REASONING
     return TaskType.SIMPLE
-
-
-@dataclass
-class ChatMessage:
-    role: str
-    content: str
 
 
 @dataclass
@@ -100,48 +102,38 @@ class LLMResult:
     def __post_init__(self) -> None:
         self.cost_usd = compute_cost(self.spec, self.prompt_tokens, self.completion_tokens)
 
-
-def compute_cost(spec: ModelSpec, prompt_tokens: int, completion_tokens: int) -> float:
-    return (
-        prompt_tokens / 1_000_000 * spec.input_price_per_m
-        + completion_tokens / 1_000_000 * spec.output_price_per_m
-    )
-
-
-def estimate_tokens(text: str) -> int:
-    """Cheap token estimate when tiktoken is unavailable (chars/4)."""
-    return max(1, len(text) // 4)
+    @property
+    def total_tokens(self) -> int:
+        return self.prompt_tokens + self.completion_tokens
 
 
 class LLMRouter:
     def __init__(
         self,
+        registry: ProviderRegistry,
         *,
-        openai_client=None,
-        anthropic_client=None,
         strict: bool = False,
         breakers: BreakerRegistry | None = None,
+        catalog: dict[str, ModelSpec] | None = None,
     ) -> None:
-        self.openai = openai_client
-        self.anthropic = anthropic_client
+        self.registry = registry
         self.strict = strict
         self.breakers = breakers or BreakerRegistry()
+        self.catalog = catalog or CATALOG
 
-    # ── provider availability ──────────────────────────
-    def _provider_available(self, provider: str) -> bool:
-        if provider == "openai":
-            return self.openai is not None
-        if provider == "anthropic":
-            return self.anthropic is not None
-        return True  # mock always available
+    def _eligible(self, spec: ModelSpec) -> bool:
+        if spec.provider == "mock":
+            return False  # mock only via explicit fallback/preference
+        if not self.registry.is_available(spec.provider):
+            return False
+        return self.breakers.get(spec.provider).allow()
 
     def _candidates(self, task: TaskType) -> list[ModelSpec]:
-        out: list[ModelSpec] = []
-        for name in ROUTING_TABLE[task]:
-            spec = CATALOG[name]
-            if self._provider_available(spec.provider) and self.breakers.get(spec.provider).allow():
-                out.append(spec)
-        return out
+        target = TASK_TIER[task]
+        pool = [s for s in self.catalog.values() if self._eligible(s)]
+        # rank: closest tier to target, then cheapest total price
+        pool.sort(key=lambda s: (abs(s.tier - target), s.input_price_per_m + s.output_price_per_m))
+        return pool
 
     async def chat(
         self,
@@ -153,8 +145,8 @@ class LLMRouter:
         prompt = messages[-1].content if messages else ""
         task_type = classify_task(prompt, force=task)
 
-        if preferred_model and preferred_model in CATALOG:
-            candidates = [CATALOG[preferred_model]]
+        if preferred_model and preferred_model in self.catalog:
+            candidates = [self.catalog[preferred_model]]
         else:
             candidates = self._candidates(task_type)
 
@@ -164,31 +156,27 @@ class LLMRouter:
                     "No healthy provider available (strict mode)",
                     detail={"task": task_type.value, "breakers": self.breakers.snapshot_all()},
                 )
-            candidates = [MOCK]  # dev fallback
+            candidates = [MOCK]
 
         last_err: Exception | None = None
         for spec in candidates:
+            provider = self.registry.get(spec.provider)
             breaker = self.breakers.get(spec.provider)
-            if not breaker.allow():
+            if provider is None or not breaker.allow():
                 continue
             try:
                 t0 = time.perf_counter()
-                text, ptok, ctok = await self._call(spec, messages)
+                res = await provider.complete(
+                    messages, model=spec.model, max_output_tokens=spec.max_output_tokens
+                )
                 latency = int((time.perf_counter() - t0) * 1000)
                 breaker.record_success()
                 return LLMResult(
-                    text=text,
-                    spec=spec,
-                    prompt_tokens=ptok,
-                    completion_tokens=ctok,
-                    latency_ms=latency,
-                    provider=spec.provider,
-                    model=spec.model,
-                    task_type=task_type.value,
+                    text=res.text, spec=spec, prompt_tokens=res.prompt_tokens,
+                    completion_tokens=res.completion_tokens, latency_ms=latency,
+                    provider=spec.provider, model=spec.model, task_type=task_type.value, raw=res.raw,
                 )
-            except CircuitOpenError:
-                continue
-            except Exception as exc:  # provider call failed
+            except Exception as exc:  # provider call failed -> try next candidate
                 breaker.record_failure()
                 last_err = exc
                 continue
@@ -198,44 +186,14 @@ class LLMRouter:
                 "All candidate providers failed",
                 detail={"task": task_type.value, "last_error": str(last_err)},
             )
-        # last resort mock so dev never hard-fails outside strict mode
-        text, ptok, ctok = await self._call(MOCK, messages)
+        # non-strict last resort: mock so dev never hard-fails
+        mock = self.registry.get("mock")
+        if mock is None:
+            raise NoProviderAvailableError("No provider and no mock registered")
+        t0 = time.perf_counter()
+        res = await mock.complete(messages, model="mock")
         return LLMResult(
-            text=text, spec=MOCK, prompt_tokens=ptok, completion_tokens=ctok,
-            latency_ms=0, provider="mock", model="mock", task_type=task_type.value,
+            text=res.text, spec=MOCK, prompt_tokens=res.prompt_tokens,
+            completion_tokens=res.completion_tokens, latency_ms=int((time.perf_counter() - t0) * 1000),
+            provider="mock", model="mock", task_type=task_type.value,
         )
-
-    async def _call(self, spec: ModelSpec, messages: list[ChatMessage]) -> tuple[str, int, int]:
-        if spec.provider == "mock":
-            return await self._call_mock(spec, messages)
-        if spec.provider == "openai":
-            return await self._call_openai(spec, messages)
-        if spec.provider == "anthropic":
-            return await self._call_anthropic(spec, messages)
-        raise NoProviderAvailableError(f"Unknown provider {spec.provider}")
-
-    async def _call_mock(self, spec: ModelSpec, messages: list[ChatMessage]) -> tuple[str, int, int]:
-        prompt = messages[-1].content if messages else ""
-        reply = f"[mock:{spec.model}] echo({len(prompt)} chars)"
-        return reply, estimate_tokens(prompt), estimate_tokens(reply)
-
-    async def _call_openai(self, spec: ModelSpec, messages: list[ChatMessage]) -> tuple[str, int, int]:
-        resp = await self.openai.chat.completions.create(
-            model=spec.model,
-            messages=[{"role": m.role, "content": m.content} for m in messages],
-            max_tokens=spec.max_output_tokens,
-        )
-        usage = resp.usage
-        return resp.choices[0].message.content or "", usage.prompt_tokens, usage.completion_tokens
-
-    async def _call_anthropic(self, spec: ModelSpec, messages: list[ChatMessage]) -> tuple[str, int, int]:
-        system = next((m.content for m in messages if m.role == "system"), None)
-        convo = [m for m in messages if m.role != "system"]
-        resp = await self.anthropic.messages.create(
-            model=spec.model,
-            max_tokens=spec.max_output_tokens,
-            system=system,
-            messages=[{"role": m.role, "content": m.content} for m in convo],
-        )
-        text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-        return text, resp.usage.input_tokens, resp.usage.output_tokens

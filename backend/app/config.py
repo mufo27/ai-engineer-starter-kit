@@ -37,6 +37,20 @@ class Settings(BaseSettings):
     anthropic_base_url: str = "https://api.anthropic.com"
     default_model: str = "mock"
 
+    # Google Gemini (native generateContent API)
+    gemini_api_key: str = ""
+    gemini_base_url: str = "https://generativelanguage.googleapis.com"
+
+    # OpenAI-compatible providers (same chat-completions schema, different base_url)
+    groq_api_key: str = ""
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
+    ollama_enabled: bool = False
+    ollama_base_url: str = "http://localhost:11434/v1"
+
     # ── Cost / budget guardrails ─────────────────────
     default_token_budget: int = 1_000_000
     alert_cost_threshold_usd: float = 50.0
@@ -64,8 +78,32 @@ class Settings(BaseSettings):
         return bool(self.anthropic_api_key.strip())
 
     @property
+    def gemini_enabled(self) -> bool:
+        return bool(self.gemini_api_key.strip())
+
+    @property
+    def groq_enabled(self) -> bool:
+        return bool(self.groq_api_key.strip())
+
+    @property
+    def openrouter_enabled(self) -> bool:
+        return bool(self.openrouter_api_key.strip())
+
+    @property
+    def deepseek_enabled(self) -> bool:
+        return bool(self.deepseek_api_key.strip())
+
+    @property
     def any_provider_enabled(self) -> bool:
-        return self.openai_enabled or self.anthropic_enabled
+        return (
+            self.openai_enabled
+            or self.anthropic_enabled
+            or self.gemini_enabled
+            or self.groq_enabled
+            or self.openrouter_enabled
+            or self.deepseek_enabled
+            or self.ollama_enabled
+        )
 
 
 @lru_cache

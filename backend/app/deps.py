@@ -24,6 +24,13 @@ from app.core.rate_limit import (
     RedisRateLimiter,
 )
 from app.services.llm_router import LLMRouter
+from app.services.providers import (
+    AnthropicProvider,
+    GeminiProvider,
+    MockProvider,
+    OpenAICompatProvider,
+    ProviderRegistry,
+)
 
 _settings = get_settings()
 
@@ -37,26 +44,49 @@ class Services:
     usage: UsageTracker
 
 
-def _build_llm_clients():
-    openai_client = None
-    anthropic_client = None
+def _build_registry() -> ProviderRegistry:
+    """Assemble providers from config. Add a vendor here -> it becomes routable."""
+    providers = [MockProvider()]
+
     if _settings.openai_enabled:
         from openai import AsyncOpenAI
 
-        openai_client = AsyncOpenAI(api_key=_settings.openai_api_key, base_url=_settings.openai_base_url)
+        client = AsyncOpenAI(api_key=_settings.openai_api_key, base_url=_settings.openai_base_url)
+        providers.append(OpenAICompatProvider("openai", client))
     if _settings.anthropic_enabled:
         from anthropic import AsyncAnthropic
 
-        anthropic_client = AsyncAnthropic(api_key=_settings.anthropic_api_key, base_url=_settings.anthropic_base_url)
-    return openai_client, anthropic_client
+        aclient = AsyncAnthropic(api_key=_settings.anthropic_api_key, base_url=_settings.anthropic_base_url)
+        providers.append(AnthropicProvider(aclient))
+    if _settings.gemini_enabled:
+        providers.append(GeminiProvider(_settings.gemini_api_key, base_url=_settings.gemini_base_url))
+
+    # OpenAI-compatible extras: same schema, different base_url/key.
+    for name, enabled, key, base_url in (
+        ("groq", _settings.groq_enabled, _settings.groq_api_key, _settings.groq_base_url),
+        ("openrouter", _settings.openrouter_enabled, _settings.openrouter_api_key, _settings.openrouter_base_url),
+        ("deepseek", _settings.deepseek_enabled, _settings.deepseek_api_key, _settings.deepseek_base_url),
+    ):
+        if enabled:
+            from openai import AsyncOpenAI
+
+            providers.append(OpenAICompatProvider(name, AsyncOpenAI(api_key=key, base_url=base_url)))
+
+    if _settings.ollama_enabled:
+        from openai import AsyncOpenAI
+
+        # Ollama needs no real key; a placeholder satisfies the client.
+        oclient = AsyncOpenAI(api_key="ollama", base_url=_settings.ollama_base_url)
+        providers.append(OpenAICompatProvider("ollama", oclient))
+
+    return ProviderRegistry(providers)
 
 
 def build_services(redis_client=None, *, use_sql: bool = False) -> Services:
     """redis_client: async redis handle or None. use_sql: SQL-backed stores."""
-    openai_client, anthropic_client = _build_llm_clients()
+    registry = _build_registry()
     router = LLMRouter(
-        openai_client=openai_client,
-        anthropic_client=anthropic_client,
+        registry,
         strict=_settings.strict_provider_mode,
         breakers=BreakerRegistry(),
     )
