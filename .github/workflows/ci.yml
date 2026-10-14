@@ -29,11 +29,10 @@ jobs:
       - name: Tests
         run: pytest -q
 
-  # Eval quality gate is wired on Day 2; placeholder kept for CI completeness.
+  # Eval quality gate: fails the build if RAG retrieval recall drops below threshold.
   eval-gate:
     runs-on: ubuntu-latest
     needs: backend
-    if: false   # flip to true once eval/run.py exists
     defaults:
       run:
         working-directory: .
@@ -42,5 +41,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "./backend[dev]"
       - name: Run eval gate
         run: python eval/run.py --min-score 0.8
