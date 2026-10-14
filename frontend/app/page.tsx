@@ -17,6 +17,13 @@ type Usage = {
   month_cost_usd: number; circuits: Record<string, { state: string }>;
 };
 
+type TraceRecord = {
+  trace_id: string; name: string; request_id?: string; duration_ms: number;
+  total_tokens: number; total_cost_usd: number;
+  spans: { name: string; ms: number }[];
+  generations: { name: string; model: string; provider: string; prompt_tokens: number; completion_tokens: number; cost_usd: number }[];
+};
+
 const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
 
 const HEADERS: Record<Section, { title: string; sub: string }> = {
@@ -46,6 +53,7 @@ export default function Home() {
   // dashboard + cost state
   const [health, setHealth] = useState<Health | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [traces, setTraces] = useState<TraceRecord[]>([]);
 
   const authHeaders = useCallback(
     () => ({ "content-type": "application/json", "x-api-key": apiKey }),
@@ -71,10 +79,22 @@ export default function Home() {
     }
   }, [base, authHeaders]);
 
+  const loadTraces = useCallback(async () => {
+    try {
+      const r = await fetch(`${base}/v1/traces`, { headers: authHeaders() });
+      if (!r.ok) throw new Error(String(r.status));
+      const body = await r.json();
+      setTraces(body.traces ?? []);
+    } catch {
+      setTraces([]);
+    }
+  }, [base, authHeaders]);
+
   useEffect(() => {
     if (section === "dashboard") loadHealth();
     if (section === "cost") loadUsage();
-  }, [section, loadHealth, loadUsage]);
+    if (section === "traces") loadTraces();
+  }, [section, loadHealth, loadUsage, loadTraces]);
 
   async function runCompare() {
     setLoading(true);
@@ -251,18 +271,54 @@ export default function Home() {
 
         {/* ---------- Traces ---------- */}
         {section === "traces" && (
-          <section className="card p-6">
-            <div className="text-sm font-semibold mb-2">How tracing works here</div>
-            <ul className="list-disc pl-5 text-sm space-y-2" style={{ color: "var(--muted)" }}>
-              <li>Each <code>/v1/chat</code> and <code>/v1/ask</code> call opens a trace with a <b>retrieve+generate</b> span and a <b>generation</b> record (model, tokens, cost).</li>
-              <li>By default traces are emitted as structured JSON logs (zero-dependency, fail-open).</li>
-              <li>Set <code>LANGFUSE_PUBLIC_KEY</code> + <code>LANGFUSE_SECRET_KEY</code> + <code>LANGFUSE_HOST</code> to ship traces to a Langfuse instance for a full UI.</li>
-              <li>Every response carries an <code>x-request-id</code> you can use to correlate logs and traces.</li>
-            </ul>
-            <div className="mt-4 text-xs" style={{ color: "var(--muted)" }}>
-              Backend base: <code>{base}</code> · Langfuse UI (if enabled): <code>http://localhost:3000</code>
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div className="text-sm" style={{ color: "var(--muted)" }}>
+                {traces.length} recent trace{traces.length === 1 ? "" : "s"} · newest first
+              </div>
+              <button className="btn-primary" onClick={loadTraces}>Refresh</button>
             </div>
-          </section>
+
+            {traces.length === 0 && (
+              <div className="card p-6 text-sm" style={{ color: "var(--muted)" }}>
+                No traces yet. Make a <code>/v1/chat</code> or <code>/v1/ask</code> request (or run an A/B eval) and refresh.
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3">
+              {traces.map((t) => (
+                <div key={t.trace_id} className="card p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold" style={{ background: "var(--brand-soft)", color: "var(--brand-dark)" }}>
+                        {t.name}
+                      </span>
+                      <span className="text-xs font-mono" style={{ color: "var(--muted)" }}>{t.request_id?.slice(0, 12)}</span>
+                    </div>
+                    <div className="text-xs tabular-nums" style={{ color: "var(--muted)" }}>
+                      {t.duration_ms} ms · {t.total_tokens} tok · ${t.total_cost_usd.toFixed(6)}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {t.spans.map((s, i) => (
+                      <span key={`s${i}`} className="px-2 py-1 rounded-lg text-xs" style={{ background: "#f6f8f7", color: "var(--muted)" }}>
+                        ⤷ {s.name} · {s.ms}ms
+                      </span>
+                    ))}
+                    {t.generations.map((g, i) => (
+                      <span key={`g${i}`} className="px-2 py-1 rounded-lg text-xs" style={{ background: "#eef6ff", color: "#155e93" }}>
+                        {g.provider}:{g.model} · {g.prompt_tokens}→{g.completion_tokens} tok · ${g.cost_usd.toFixed(6)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p className="mt-4 text-xs" style={{ color: "var(--muted)" }}>
+              Traces are buffered in-memory (last 50). Set <code>LANGFUSE_*</code> env to also ship them to a Langfuse UI.
+            </p>
+          </div>
         )}
 
         {/* ---------- Cost ---------- */}

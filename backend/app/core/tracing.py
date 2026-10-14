@@ -13,11 +13,17 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import threading
 import time
 import uuid
+from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+
+# In-memory ring buffer of recent traces (for the dashboard's Traces view).
+_RECENT_TRACES: deque[dict[str, Any]] = deque(maxlen=50)
+_RECENT_LOCK = threading.Lock()
 
 
 @dataclass
@@ -66,6 +72,37 @@ class Trace:
 
     def end(self) -> None:
         self._tracer._flush(self)
+
+    def to_dict(self) -> dict[str, Any]:
+        spans = [
+            {"name": e.name, "ms": e.duration_ms, **e.metadata}
+            for e in self.events if e.type == "span"
+        ]
+        generations = [
+            {
+                "name": e.name,
+                "model": e.metadata.get("model"),
+                "provider": e.metadata.get("provider"),
+                "prompt_tokens": e.metadata.get("prompt_tokens", 0),
+                "completion_tokens": e.metadata.get("completion_tokens", 0),
+                "cost_usd": e.metadata.get("cost_usd", 0),
+            }
+            for e in self.events if e.type == "generation"
+        ]
+        total_cost = round(sum(g["cost_usd"] or 0 for g in generations), 8)
+        total_tokens = sum((g["prompt_tokens"] or 0) + (g["completion_tokens"] or 0) for g in generations)
+        return {
+            "trace_id": self.trace_id,
+            "name": self.name,
+            "user_id": self.user_id,
+            "request_id": self.metadata.get("request_id"),
+            "duration_ms": int((time.time() - self.start_ts) * 1000),
+            "total_tokens": total_tokens,
+            "total_cost_usd": total_cost,
+            "spans": spans,
+            "generations": generations,
+            "ts": self.start_ts,
+        }
 
 
 class TracingBackend(Protocol):
@@ -135,6 +172,15 @@ class Tracer:
 
     def _flush(self, trace: Trace) -> None:
         self.backend.emit(trace)
+        record = trace.to_dict()
+        with _RECENT_LOCK:
+            _RECENT_TRACES.appendleft(record)
+
+
+def recent_traces(limit: int = 50) -> list[dict[str, Any]]:
+    """Return buffered traces, newest first."""
+    with _RECENT_LOCK:
+        return list(_RECENT_TRACES)[:limit]
 
 
 def build_tracer(settings) -> Tracer:

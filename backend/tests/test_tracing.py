@@ -71,3 +71,36 @@ def test_build_tracer_selection():
         langfuse_host = "http://x"
     assert isinstance(build_tracer(_NoKeys()).backend, LogBackend)
     assert isinstance(build_tracer(_Keys()).backend, LangfuseBackend)
+
+
+def test_recent_traces_buffer():
+    from app.core.tracing import recent_traces
+
+    tracer = Tracer(RecordingBackend())
+    t = tracer.start("chat", user_id="t1", metadata={"request_id": "r1"})
+    with t.span("llm"):
+        pass
+    t.generation(name="chat", model="m", provider="p", prompt_tokens=10, completion_tokens=5, cost_usd=0.02)
+    t.end()
+    buf = recent_traces()
+    assert buf and buf[0]["name"] == "chat"
+    assert buf[0]["request_id"] == "r1"
+    assert buf[0]["total_tokens"] == 15
+    assert buf[0]["total_cost_usd"] == 0.02
+    assert any(s["name"] == "llm" for s in buf[0]["spans"])
+
+
+def test_traces_endpoint_returns_data():
+    from fastapi.testclient import TestClient
+
+    from app.core.auth import issue_jwt
+    from app.main import app
+
+    tok = {"Authorization": f"Bearer {issue_jwt('t1', 'acme', ['chat', 'traces'])}"}
+    with TestClient(app) as c:
+        c.post("/v1/chat", headers=tok, json={"messages": [{"role": "user", "content": "hi"}]})
+        r = c.get("/v1/traces", headers=tok)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["count"] >= 1
+        assert body["traces"][0]["name"] == "chat"

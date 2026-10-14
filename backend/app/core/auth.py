@@ -23,7 +23,7 @@ from app.core.errors import AuthError, ForbiddenError, ScopeError
 
 _settings = get_settings()
 
-ALL_SCOPES = {"chat", "ask", "documents", "usage", "eval"}
+ALL_SCOPES = {"chat", "ask", "documents", "usage", "eval", "traces"}
 
 
 @dataclass

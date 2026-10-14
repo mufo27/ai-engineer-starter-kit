@@ -20,7 +20,7 @@ from app.config import get_settings
 from app.core.errors import AppError
 from app.core.metrics import METRICS
 from app.deps import SERVICES, build_services
-from app.routers import ask, chat, documents, metrics, prompts, usage
+from app.routers import ask, chat, documents, metrics, prompts, traces, usage
 from app.routers import eval as eval_router
 
 _settings = get_settings()
@@ -122,3 +122,4 @@ app.include_router(ask.router)
 app.include_router(prompts.router)
 app.include_router(eval_router.router)
 app.include_router(metrics.router)
+app.include_router(traces.router)
