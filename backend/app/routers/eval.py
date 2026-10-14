@@ -23,6 +23,7 @@ class CompareIn(BaseModel):
     version_b: int = 1
     body_a: str | None = None   # if set, added as a new version and used for A
     body_b: str | None = None   # if set, added as a new version and used for B
+    live: bool = False          # True -> use configured providers (real answers)
 
 
 @router.post("/eval/compare")
@@ -36,5 +37,6 @@ async def compare(body: CompareIn, request: Request, principal: PrincipalDep) ->
         version_b=body.version_b,
         body_a=body.body_a,
         body_b=body.body_b,
+        router=services.router if body.live else None,
     )
     return asdict(result)

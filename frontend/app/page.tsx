@@ -28,6 +28,7 @@ export default function Home() {
   const [bodyA, setBodyA] = useState("");
   const [bodyB, setBodyB] = useState("You are a terse assistant. Answer in <= 15 words using ONLY context.\nContext:\n{{context}}\n\nQuestion: {{question}}\n\nAnswer:");
   const [loading, setLoading] = useState(false);
+  const [live, setLive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Compare | null>(null);
 
@@ -44,6 +45,7 @@ export default function Home() {
           version_b: versionB,
           body_a: bodyA.trim() ? bodyA : null,
           body_b: bodyB.trim() ? bodyB : null,
+          live,
         }),
       });
       if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
@@ -97,7 +99,11 @@ export default function Home() {
               <label className="label">Version B</label>
               <input className="field" type="number" value={versionB} onChange={(e) => setVersionB(+e.target.value)} />
             </div>
-            <div className="md:col-span-2 flex items-end">
+            <div className="md:col-span-2 flex items-end gap-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: "var(--muted)" }}>
+                <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} />
+                Use live provider (real LLM)
+              </label>
               <button className="btn-primary inline-flex items-center gap-2" onClick={run} disabled={loading}>
                 <IconSpark /> {loading ? "Running…" : "Run comparison"}
               </button>
