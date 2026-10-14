@@ -27,6 +27,11 @@ type ChatReply = { reply: string; provider: string; model: string; cost_usd: num
 
 const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
 
+// i18n key prefix per section (dashboard uses the "dash." namespace).
+const SECTION_PREFIX: Record<Section, string> = {
+  dashboard: "dash", eval: "eval", traces: "traces", cost: "cost", settings: "settings",
+};
+
 export default function Home() {
   const [section, setSection] = useState<Section>("eval");
   const [base, setBase] = useState("http://localhost:8000");
@@ -164,8 +169,8 @@ export default function Home() {
         <div className="px-6 md:px-10 py-8">
           {/* Header */}
           <header className="mb-6">
-            <h1 className="text-2xl font-bold">{t(`${section}.title`)}</h1>
-            <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>{t(`${section}.sub`)}</p>
+            <h1 className="text-2xl font-bold">{t(`${SECTION_PREFIX[section]}.title`)}</h1>
+            <p className="text-sm mt-1" style={{ color: "var(--muted)" }}>{t(`${SECTION_PREFIX[section]}.sub`)}</p>
           </header>
 
           {/* ---------- Dashboard ---------- */}
