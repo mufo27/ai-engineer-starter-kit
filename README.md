@@ -1,69 +1,129 @@
 # AI Engineer Starter Kit
 
-> Production-grade scaffold for building LLM applications — fork it, `docker compose up`, ship.
+> A production-grade, open-source scaffold for building LLM applications — fork it, `docker compose up`, ship.
 
-**Status:** 🚧 Day 1 complete (LLM router + multi-tenant auth + rate limiting + cost tracking). Day 2 adds RAG + Langfuse + eval. Day 3 adds A/B dashboard + K8s + full docs.
+![CI](https://github.com/mufo27/ai-engineer-starter-kit/actions/workflows/ci.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
+![Next.js 14](https://img.shields.io/badge/next.js-14-black)
+![pgvector](https://img.shields.io/badge/pgvector-16-12b76a)
 
-## What it does
+Everything the boring-but-critical parts of an AI product need — already wired, tested,
+and deployable:
 
-A FastAPI backend that gives you the boring-but-critical parts of any AI product, already wired:
+- **LLM Router** — classifies each request and routes to the cheapest capable provider
+  (OpenAI / Anthropic / **Gemini** / any OpenAI-compatible: Groq, OpenRouter, DeepSeek, Ollama),
+  with retry + per-provider circuit breaker + mock fallback.
+- **Hybrid RAG** — chunk → embed → pgvector → cosine + keyword retrieval → rerank →
+  grounded answer **with citations**.
+- **Prompt versioning** — prompts live in the DB, versioned, with rollback + A/B compare.
+- **Eval harness** — golden-set scoring (recall@k / relevancy / faithfulness) + a **CI quality gate**.
+- **Cost tracking** — per-call token + USD accounting with a **fail-closed** monthly budget.
+- **Multi-tenant auth** — hashed API keys + short-lived JWTs with per-key scopes.
+- **Observability** — Langfuse-style tracing (opt-in), structured JSON logs, request-id, Prometheus `/metrics`.
+- **A/B eval dashboard** — Next.js + Tailwind (Paypers-style) to compare prompt versions side by side.
+- **Deploy-ready** — Docker Compose (dev) + Helm chart with HPA + Ingress (prod) + GitHub Actions CI/CD.
 
-- **LLM Router** — classifies each request and routes to the cheapest capable provider (OpenAI / Anthropic), with retry + circuit breaker + mock fallback.
-- **Multi-tenant auth** — per-tenant API keys (hashed, never plaintext) and short-lived JWTs, with per-key scopes.
-- **Rate limiting** — Redis token-bucket QPS + monthly request quota.
-- **Cost tracking** — every call logged with token counts + USD cost, and a **fail-closed** monthly token budget.
-- **RAG** (Day 2) — chunk → embed → pgvector → hybrid search → rerank → grounded answer with citations.
-- **Prompt versioning + eval** (Day 2) — prompts in the DB, not code; golden-set eval with an A/B compare.
-- **Observability** — Langfuse traces (Day 2), structured JSON logs, request-id correlation.
+**Design principle — fail-closed:** if the system can't serve a request safely (no provider,
+budget spent, breaker open), it refuses rather than fabricating a response or over-billing.
 
-Design principle: **fail-closed**. If the system can't serve a request safely (no provider, budget spent, breaker open), it refuses instead of fabricating or over-billing.
+---
 
 ## Quickstart
 
 ```bash
-cp .env.example .env          # add your OPENAI/ANTHROPIC keys (optional — mock mode works without)
-docker compose up --build
-# API on http://localhost:8000 — try:
-curl -s localhost:8000/health
+cp .env.example .env          # optional: add provider keys (mock mode works without)
+docker compose up --build     # api :8000, web :3000, postgres :5432, redis :6379
 ```
 
-## Try it (mock mode, no keys needed)
+Open the dashboard at **http://localhost:3000**, or hit the API:
 
 ```bash
-curl -s localhost:8000/v1/chat \
-  -H "x-api-key: dev-key-123" -H "content-type: application/json" \
+curl -s localhost:8000/health
+curl -s localhost:8000/v1/chat -H "x-api-key: dev-key-123" -H "content-type: application/json" \
   -d '{"messages":[{"role":"user","content":"hello"}]}'
 ```
 
-## API (Day 1)
+Run the guided demo (health → ingest → ask → A/B eval → usage):
 
-| Method | Path | Auth | Description |
+```bash
+make demo
+```
+
+## Architecture
+
+```mermaid
+flowchart LR
+  W[Next.js Dashboard] -->|x-api-key| A[Auth + Scope]
+  A --> R[Rate limit] --> Q[Quota] --> B[Budget guard]
+  B --> RT[LLM Router] --> REG[Provider Registry] --> P[OpenAI / Anthropic / Gemini / Groq...]
+  B --> RAG[RAG Service] --> EMB[Embedder] & VS[(pgvector)] & PM[Prompt Store]
+  RT & RAG --> TR[Tracer -> Langfuse]
+```
+
+Full design rationale, trade-offs, failure modes, scaling path and threat model:
+**[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+
+## API
+
+| Method | Path | Scope | Description |
 |---|---|---|---|
-| GET | `/health` | none | liveness + provider status |
-| POST | `/v1/chat` | api-key / JWT | routed chat + cost breakdown |
-| GET | `/v1/usage` | api-key / JWT | per-tenant token/cost summary |
+| GET | `/health` | — | liveness + provider status |
+| GET | `/metrics` | — | Prometheus exposition |
+| POST | `/v1/chat` | `chat` | routed chat + cost breakdown |
+| POST | `/v1/documents` | `documents` | ingest text → chunk → embed → store |
+| GET | `/v1/documents` | `documents` | list tenant documents |
+| POST | `/v1/ask` | `ask` | grounded RAG answer + citations + cost |
+| POST | `/v1/ask/stream` | `ask` | SSE: citations → answer deltas → final |
+| POST | `/v1/prompts` | `documents` | add a new prompt version |
+| GET | `/v1/prompts/{name}` | `documents` | list versions + active |
+| POST | `/v1/prompts/{name}/activate` | `documents` | promote/rollback active version |
+| POST | `/v1/eval/compare` | `eval` | A/B two prompt versions over the golden set |
+| GET | `/v1/usage` | `usage` | per-tenant token/cost summary + breaker health |
+
+Auth: send `x-api-key: <key>` or `Authorization: Bearer <jwt>`. `dev-key-123` is an
+in-memory demo key (development only).
 
 ## Development (no Docker)
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/Scripts/activate   # Windows
+python -m venv .venv && source .venv/Scripts/activate   # Windows (Git Bash)
 pip install -e ".[dev]"
-pytest -q            # 24 tests, no DB/Redis required
+pytest -q            # 72 tests, no DB/Redis/network required
 ruff check app tests
+python ../eval/run.py --min-score 0.8   # RAG eval gate (offline, mock)
 ```
 
-## Layout
+## Testing & quality
 
-```
-backend/     FastAPI app (core/, routers/, services/, db/)
-frontend/    Next.js A/B eval dashboard (Day 3)
-eval/        golden set + eval runner (Day 2)
-k8s/         Kubernetes manifests (Day 3)
+- **72 tests** (unit + integration + API) run without infrastructure via in-memory stores.
+- **Ruff** lint + import-sort, **mypy** type check.
+- **Eval gate**: CI fails if mean RAG `recall@k` drops below 0.8.
+- **Live verification**: `docker compose up` + `make demo` exercise the real request path
+  (verified against Gemini: routing, RAG citations, SSE streaming, cost accounting).
+
+## Deploy
+
+```bash
+# Helm (staging/prod): set provider keys at install time, never commit them
+helm upgrade --install ai-kit ./k8s/helm/ai-kit \
+  --namespace ai-kit --create-namespace \
+  --set secrets.geminiApiKey=... --set secrets.jwtSecret=$(openssl rand -hex 32)
 ```
 
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for design decisions.
+CI builds api + web images to GHCR on `main`; `deploy-staging` runs the Helm upgrade when
+the `DEPLOY_STAGING` repo variable + `KUBE_CONFIG` secret are configured.
+
+## Production checklist
+
+- [ ] Set a strong `JWT_SECRET`; rotate provider keys.
+- [ ] Run with `APP_ENV=production` (SQL-backed keys/usage, Redis rate limiting).
+- [ ] Create real tenants + hashed API keys (the demo key is dev-only).
+- [ ] Add a real reranker / LLM-judge eval for answer quality.
+- [ ] Point tracing at a Langfuse instance; alert on cost + error-rate metrics.
+- [ ] Enable Ingress TLS; set per-tenant budgets to your economics.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
