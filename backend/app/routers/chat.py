@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.core.cost import UsageRecord
 from app.core.deps_auth import PrincipalDep, request_id
 from app.core.errors import RateLimitError
+from app.core.metrics import METRICS
 from app.deps import SERVICES
 from app.services.llm_router import ChatMessage, TaskType
 
@@ -82,6 +83,9 @@ async def chat(body: ChatIn, request: Request, principal: PrincipalDep) -> ChatO
             cost_usd=result.cost_usd,
             latency_ms=result.latency_ms,
         )
+    )
+    METRICS.observe_llm(
+        principal.tenant_id, result.provider, result.prompt_tokens, result.completion_tokens, result.cost_usd
     )
 
     return ChatOut(

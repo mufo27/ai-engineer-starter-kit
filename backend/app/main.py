@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from contextlib import asynccontextmanager
 
@@ -16,8 +17,10 @@ from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.core.errors import AppError
+from app.core.metrics import METRICS
 from app.deps import SERVICES, build_services
-from app.routers import ask, chat, documents, prompts, usage
+from app.routers import ask, chat, documents, metrics, prompts, usage
+from app.routers import eval as eval_router
 
 _settings = get_settings()
 
@@ -86,8 +89,10 @@ app = FastAPI(
 async def request_id_middleware(request: Request, call_next):
     rid = request.headers.get("x-request-id") or uuid.uuid4().hex
     request.state.request_id = rid
+    t0 = time.perf_counter()
     response = await call_next(request)
     response.headers["x-request-id"] = rid
+    METRICS.observe_request(request.url.path, response.status_code, time.perf_counter() - t0)
     return response
 
 
@@ -106,3 +111,5 @@ app.include_router(usage.router)
 app.include_router(documents.router)
 app.include_router(ask.router)
 app.include_router(prompts.router)
+app.include_router(eval_router.router)
+app.include_router(metrics.router)

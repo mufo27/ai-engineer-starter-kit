@@ -1,74 +1,40 @@
 #!/usr/bin/env python3
-"""RAG eval harness.
+"""RAG eval CLI — thin wrapper over app.services.eval.
 
-Runs every golden case through the RAG pipeline and scores retrieval + answer
-quality, writes a CSV report, and (for CI) exits non-zero if the mean
-retrieval recall is below --min-score.
+Runs the golden set through the RAG pipeline, writes a CSV report, and gates on
+mean recall@k (exit 1 below threshold) for CI. Mock LLM by default (offline);
+--live uses real providers from .env.
 
 Usage:
-    python eval/run.py                       # mock LLM, gate on recall@k >= 0.8
-    python eval/run.py --min-score 0.9       # stricter
-    python eval/run.py --live                # use real providers from .env if keys set
+    python eval/run.py [--min-score 0.8] [--live] [--out eval/reports/report.csv]
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
 import csv
-import json
 import os
 import sys
 from pathlib import Path
 
-# Make the backend + eval package importable when run from anywhere.
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.services.embeddings import MockEmbedder  # noqa: E402
-from app.services.llm_router import LLMRouter  # noqa: E402
-from app.services.prompt_store import InMemoryPromptStore  # noqa: E402
-from app.services.providers import MockProvider, ProviderRegistry  # noqa: E402
-from app.services.rag import RAGService  # noqa: E402
-from app.services.vectorstore import InMemoryVectorStore  # noqa: E402
-from eval.scoring import score_case  # noqa: E402
+from app.services.eval import aggregate, load_golden, run_suite  # noqa: E402
 
 
-def _build_router(live: bool):
+def _router(live: bool):
     if not live:
-        return LLMRouter(ProviderRegistry([MockProvider()]), strict=False)
-    from app.config import get_settings
+        return None  # run_suite defaults to mock router
     from app.deps import _build_registry
+    from app.services.llm_router import LLMRouter
 
     return LLMRouter(_build_registry(), strict=False)
 
 
 async def run(min_score: float, live: bool, report_path: Path) -> int:
-    cases = json.loads((ROOT / "eval" / "golden" / "qa.json").read_text(encoding="utf-8"))["cases"]
-    router = _build_router(live)
-    rows = []
-
-    for case in cases:
-        rag = RAGService(
-            embedder=MockEmbedder(), store=InMemoryVectorStore(),
-            prompts=InMemoryPromptStore(), router=router,
-        )
-        for doc in case["documents"]:
-            await rag.ingest(tenant_id="eval", title=doc["title"], text=doc["text"])
-        result = await rag.ask(tenant_id="eval", question=case["question"], k=4)
-        retrieved_text = "\n".join(c.snippet for c in result.citations)
-        metrics = score_case(case["question"], case["expected_terms"], case["expected_answer"], result.answer, retrieved_text)
-        rows.append({
-            "id": case["id"], "question": case["question"], "answer": result.answer[:80],
-            "retrieved": result.retrieved, **metrics,
-        })
-
-    n = len(rows)
-    means = {
-        "recall_at_k": sum(r["recall_at_k"] for r in rows) / n,
-        "answer_relevancy": sum(r["answer_relevancy"] for r in rows) / n,
-        "faithfulness": sum(r["faithfulness"] for r in rows) / n,
-    }
+    rows = await run_suite(load_golden(), router=_router(live))
+    means = aggregate(rows)
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with report_path.open("w", newline="", encoding="utf-8") as f:
@@ -89,9 +55,9 @@ async def run(min_score: float, live: bool, report_path: Path) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="RAG eval harness")
-    ap.add_argument("--min-score", type=float, default=0.8, help="minimum mean recall@k to pass")
-    ap.add_argument("--live", action="store_true", help="use real providers from .env")
-    ap.add_argument("--out", default="eval/reports/report.csv", help="CSV report path")
+    ap.add_argument("--min-score", type=float, default=0.8)
+    ap.add_argument("--live", action="store_true")
+    ap.add_argument("--out", default="eval/reports/report.csv")
     args = ap.parse_args()
     return asyncio.run(run(args.min_score, args.live, ROOT / args.out))
 

@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.core.cost import UsageRecord
 from app.core.deps_auth import PrincipalDep, request_id
 from app.core.errors import RateLimitError
+from app.core.metrics import METRICS
 from app.deps import SERVICES
 
 router = APIRouter(prefix="/v1", tags=["ask"])
@@ -82,6 +83,9 @@ async def ask(body: AskIn, request: Request, principal: PrincipalDep) -> AskOut:
             task_type=result.task_type, prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens, cost_usd=result.cost_usd, latency_ms=result.latency_ms,
         )
+    )
+    METRICS.observe_llm(
+        principal.tenant_id, result.provider, result.prompt_tokens, result.completion_tokens, result.cost_usd
     )
 
     return AskOut(

@@ -1,0 +1,49 @@
+{
+  "cases": [
+    {
+      "id": "mito",
+      "question": "What organelle is the powerhouse of the cell?",
+      "expected_answer": "mitochondria",
+      "expected_terms": ["mitochondria", "powerhouse", "cell"],
+      "documents": [
+        {"title": "Cell biology", "text": "The mitochondria is the powerhouse of the cell. It generates most of the cell's supply of adenosine triphosphate (ATP)."}
+      ]
+    },
+    {
+      "id": "paris",
+      "question": "In which city is the Eiffel Tower located?",
+      "expected_answer": "Paris",
+      "expected_terms": ["Eiffel", "Paris"],
+      "documents": [
+        {"title": "Landmarks", "text": "The Eiffel Tower is located in Paris, France. It was completed in 1889."}
+      ]
+    },
+    {
+      "id": "python",
+      "question": "Who created the Python programming language?",
+      "expected_answer": "Guido van Rossum",
+      "expected_terms": ["Python", "Guido", "Rossum"],
+      "documents": [
+        {"title": "Languages", "text": "Python was created by Guido van Rossum and first released in 1991."}
+      ]
+    },
+    {
+      "id": "thailand",
+      "question": "What is the capital of Thailand?",
+      "expected_answer": "Bangkok",
+      "expected_terms": ["capital", "Bangkok", "Thailand"],
+      "documents": [
+        {"title": "Geography", "text": "Bangkok is the capital and most populous city of Thailand."}
+      ]
+    },
+    {
+      "id": "speed",
+      "question": "What is the approximate speed of light?",
+      "expected_answer": "299792458 meters per second",
+      "expected_terms": ["speed", "light", "meters"],
+      "documents": [
+        {"title": "Physics", "text": "The speed of light in vacuum is exactly 299792458 meters per second."}
+      ]
+    }
+  ]
+}
