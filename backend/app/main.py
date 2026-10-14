@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.core.errors import AppError
 from app.deps import SERVICES, build_services
-from app.routers import chat, usage
+from app.routers import ask, chat, documents, prompts, usage
 
 _settings = get_settings()
 
@@ -103,3 +103,6 @@ async def health() -> dict:
 
 app.include_router(chat.router)
 app.include_router(usage.router)
+app.include_router(documents.router)
+app.include_router(ask.router)
+app.include_router(prompts.router)

@@ -23,7 +23,9 @@ from app.core.rate_limit import (
     MonthlyQuota,
     RedisRateLimiter,
 )
+from app.services.embeddings import build_embedder
 from app.services.llm_router import LLMRouter
+from app.services.prompt_store import InMemoryPromptStore, PromptStore
 from app.services.providers import (
     AnthropicProvider,
     GeminiProvider,
@@ -31,6 +33,8 @@ from app.services.providers import (
     OpenAICompatProvider,
     ProviderRegistry,
 )
+from app.services.rag import RAGService
+from app.services.vectorstore import InMemoryVectorStore, PgVectorStore, VectorStore
 
 _settings = get_settings()
 
@@ -42,6 +46,10 @@ class Services:
     rate_limiter: InMemoryRateLimiter | RedisRateLimiter
     quota: MonthlyQuota
     usage: UsageTracker
+    embedder: object
+    vectorstore: VectorStore
+    prompts: PromptStore
+    rag: RAGService
 
 
 def _build_registry() -> ProviderRegistry:
@@ -116,12 +124,21 @@ def build_services(redis_client=None, *, use_sql: bool = False) -> Services:
         rate_limiter = InMemoryRateLimiter(_settings.rate_limit_qps)
         quota = MonthlyQuota(None, _settings.rate_limit_monthly_requests)
 
+    embedder = build_embedder(_settings)
+    vectorstore: VectorStore = PgVectorStore() if use_sql else InMemoryVectorStore()
+    prompts: PromptStore = InMemoryPromptStore()  # self-seeds the default RAG prompt
+    rag = RAGService(embedder=embedder, store=vectorstore, prompts=prompts, router=router)
+
     return Services(
         router=router,
         api_keys=api_keys,
         rate_limiter=rate_limiter,
         quota=quota,
         usage=UsageTracker(usage_store),
+        embedder=embedder,
+        vectorstore=vectorstore,
+        prompts=prompts,
+        rag=rag,
     )
 
 
