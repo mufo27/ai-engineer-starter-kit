@@ -19,12 +19,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # ── App ─────────────────────────────────────────
+    # ── App ────────────────────────────────────────
     app_env: Literal["development", "staging", "production"] = "development"
     log_level: str = "INFO"
     jwt_secret: str = "change-me-in-production-use-a-long-random-string"
     jwt_algorithm: str = "HS256"
     jwt_ttl_seconds: int = 3600
+    cors_origins: str = "http://localhost:3000"  # comma-separated; never use '*'
 
     # ── Database / cache ─────────────────────────────
     database_url: str = "postgresql+asyncpg://kit:kit_dev_password@localhost:5432/ai_kit"
@@ -68,6 +69,10 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_host: str = "http://localhost:3000"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def openai_enabled(self) -> bool:

@@ -13,6 +13,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
@@ -82,6 +83,14 @@ app = FastAPI(
     version="0.1.0",
     description="Production-grade LLM router + RAG + cost tracking + multi-tenant auth",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_settings.cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["content-type", "x-api-key", "authorization", "x-request-id"],
 )
 
 
