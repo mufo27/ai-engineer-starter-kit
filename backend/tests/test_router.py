@@ -38,6 +38,16 @@ async def test_mock_fallback_when_no_provider(router_mock: LLMRouter):
 
 
 @pytest.mark.asyncio
+async def test_router_reports_actual_task_type(router_mock: LLMRouter):
+    # Regression: response must carry the real classification, not a default 'simple'.
+    res = await router_mock.chat(
+        [ChatMessage(role="user", content="please classify this sentiment: great product")]
+    )
+    assert res.provider == "mock"          # still mock fallback (no keys)
+    assert res.task_type == TaskType.CLASSIFY.value
+
+
+@pytest.mark.asyncio
 async def test_preferred_model_pins(router_mock: LLMRouter):
     res = await router_mock.chat([ChatMessage(role="user", content="hi")], preferred_model="mock")
     assert res.model == "mock"

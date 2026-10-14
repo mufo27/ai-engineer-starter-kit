@@ -93,6 +93,7 @@ class LLMResult:
     latency_ms: int
     provider: str
     model: str
+    task_type: str = "simple"
     cost_usd: float = 0.0
     raw: dict = field(default_factory=dict)
 
@@ -183,6 +184,7 @@ class LLMRouter:
                     latency_ms=latency,
                     provider=spec.provider,
                     model=spec.model,
+                    task_type=task_type.value,
                 )
             except CircuitOpenError:
                 continue
@@ -200,7 +202,7 @@ class LLMRouter:
         text, ptok, ctok = await self._call(MOCK, messages)
         return LLMResult(
             text=text, spec=MOCK, prompt_tokens=ptok, completion_tokens=ctok,
-            latency_ms=0, provider="mock", model="mock",
+            latency_ms=0, provider="mock", model="mock", task_type=task_type.value,
         )
 
     async def _call(self, spec: ModelSpec, messages: list[ChatMessage]) -> tuple[str, int, int]:
