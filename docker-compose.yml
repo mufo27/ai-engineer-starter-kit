@@ -45,6 +45,17 @@ services:
         condition: service_healthy
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
   # Langfuse self-hosted (enabled Day 2). Uncomment to run locally.
   # langfuse:
   #   image: langfuse/langfuse:latest
