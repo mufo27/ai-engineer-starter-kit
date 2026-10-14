@@ -2,47 +2,47 @@
   "cases": [
     {
       "id": "mito",
-      "question": "What organelle is the powerhouse of the cell?",
-      "expected_answer": "mitochondria",
-      "expected_terms": ["mitochondria", "powerhouse", "cell"],
+      "question": "ออร์แกเนลล์ ใด คือ แหล่ง พลังงาน ของ เซลล์",
+      "expected_answer": "ไมโทคอนเดรีย",
+      "expected_terms": ["ไมโทคอนเดรีย", "แหล่ง", "พลังงาน", "เซลล์"],
       "documents": [
-        {"title": "Cell biology", "text": "The mitochondria is the powerhouse of the cell. It generates most of the cell's supply of adenosine triphosphate (ATP)."}
+        {"title": "ชีววิทยา เซลล์", "text": "ไมโทคอนเดรีย คือ แหล่ง พลังงาน ของ เซลล์ ผลิต ATP ส่วนใหญ่ ให้ เซลล์ ใช้ เป็น พลังงาน"}
       ]
     },
     {
       "id": "paris",
-      "question": "In which city is the Eiffel Tower located?",
-      "expected_answer": "Paris",
-      "expected_terms": ["Eiffel", "Paris"],
+      "question": "หอไอเฟล ตั้งอยู่ ที่ เมือง ใด",
+      "expected_answer": "ปารีส",
+      "expected_terms": ["หอไอเฟล", "ปารีส"],
       "documents": [
-        {"title": "Landmarks", "text": "The Eiffel Tower is located in Paris, France. It was completed in 1889."}
+        {"title": "สถานที่ สำคัญ", "text": "หอไอเฟล ตั้งอยู่ ที่ กรุง ปารีส ประเทศ ฝรั่งเศส สร้าง เสร็จ ปี 1889"}
       ]
     },
     {
       "id": "python",
-      "question": "Who created the Python programming language?",
+      "question": "ใคร สร้าง ภาษา โปรแกรม Python",
       "expected_answer": "Guido van Rossum",
       "expected_terms": ["Python", "Guido", "Rossum"],
       "documents": [
-        {"title": "Languages", "text": "Python was created by Guido van Rossum and first released in 1991."}
+        {"title": "ภาษา โปรแกรม", "text": "Python สร้าง โดย Guido van Rossum และ เผยแพร่ ครั้งแรก ปี 1991"}
       ]
     },
     {
       "id": "thailand",
-      "question": "What is the capital of Thailand?",
-      "expected_answer": "Bangkok",
-      "expected_terms": ["capital", "Bangkok", "Thailand"],
+      "question": "เมืองหลวง ของ ประเทศไทย คือ เมือง ใด",
+      "expected_answer": "กรุงเทพมหานคร",
+      "expected_terms": ["เมืองหลวง", "กรุงเทพมหานคร", "ประเทศไทย"],
       "documents": [
-        {"title": "Geography", "text": "Bangkok is the capital and most populous city of Thailand."}
+        {"title": "ภูมิศาสตร์", "text": "กรุงเทพมหานคร คือ เมืองหลวง และ เมือง ที่ มี ประชากร มาก ที่สุด ใน ประเทศไทย"}
       ]
     },
     {
       "id": "speed",
-      "question": "What is the approximate speed of light?",
-      "expected_answer": "299792458 meters per second",
-      "expected_terms": ["speed", "light", "meters"],
+      "question": "ความเร็ว แสง โดย ประมาณ คือ เท่าไร",
+      "expected_answer": "299792458 เมตร ต่อ วินาที",
+      "expected_terms": ["ความเร็ว", "แสง", "เมตร"],
       "documents": [
-        {"title": "Physics", "text": "The speed of light in vacuum is exactly 299792458 meters per second."}
+        {"title": "ฟิสิกส์", "text": "ความเร็ว แสง ใน สุญญากาศ เท่ากับ 299792458 เมตร ต่อ วินาที"}
       ]
     }
   ]
