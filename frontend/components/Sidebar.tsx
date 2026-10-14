@@ -1,14 +1,24 @@
+"use client";
+
 import { IconBeaker, IconCoin, IconDashboard, IconSettings, IconTrace } from "./icons";
 
-const nav = [
-  { label: "Dashboard", icon: IconDashboard, active: false },
-  { label: "A/B Eval", icon: IconBeaker, active: true },
-  { label: "Traces", icon: IconTrace, active: false },
-  { label: "Cost", icon: IconCoin, active: false },
-  { label: "Settings", icon: IconSettings, active: false },
+export type Section = "dashboard" | "eval" | "traces" | "cost" | "settings";
+
+const nav: { id: Section; label: string; icon: typeof IconDashboard }[] = [
+  { id: "dashboard", label: "Dashboard", icon: IconDashboard },
+  { id: "eval", label: "A/B Eval", icon: IconBeaker },
+  { id: "traces", label: "Traces", icon: IconTrace },
+  { id: "cost", label: "Cost", icon: IconCoin },
+  { id: "settings", label: "Settings", icon: IconSettings },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({
+  active,
+  onSelect,
+}: {
+  active: Section;
+  onSelect: (s: Section) => void;
+}) {
   return (
     <aside
       className="hidden md:flex flex-col w-60 shrink-0 border-r"
@@ -29,20 +39,24 @@ export default function Sidebar() {
       <nav className="p-3 flex flex-col gap-1">
         {nav.map((item) => {
           const Icon = item.icon;
+          const isActive = item.id === active;
           return (
-            <a
-              key={item.label}
-              href="#"
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors"
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onSelect(item.id)}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors text-left w-full"
               style={{
-                background: item.active ? "var(--brand-soft)" : "transparent",
-                color: item.active ? "var(--brand-dark)" : "var(--muted)",
+                background: isActive ? "var(--brand-soft)" : "transparent",
+                color: isActive ? "var(--brand-dark)" : "var(--muted)",
                 justifyContent: "flex-start",
+                border: "none",
+                cursor: "pointer",
               }}
             >
               <Icon />
               {item.label}
-            </a>
+            </button>
           );
         })}
       </nav>
