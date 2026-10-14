@@ -72,3 +72,36 @@ class GeminiProvider:
             completion_tokens=usage.get("candidatesTokenCount", estimate_tokens(text)),
             raw={"finish": [c.get("finishReason") for c in data.get("candidates", [])]},
         )
+
+    async def astream(self, messages, *, model, max_output_tokens: int = 1024):
+        """Stream text deltas from Gemini's SSE streaming endpoint."""
+        import json
+
+        url = f"{self._base_url}/v1beta/models/{model}:streamGenerateContent"
+        params = {"key": self._api_key, "alt": "sse"}
+        payload = self._payload(messages, max_output_tokens)
+        async with httpx.AsyncClient(timeout=120) as client, client.stream(
+            "POST", url, params=params, json=payload
+        ) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                chunk = line[len("data:"):].strip()
+                if not chunk or chunk == "[DONE]":
+                    continue
+                try:
+                    data = json.loads(chunk)
+                except json.JSONDecodeError:
+                    continue
+                for part in self._stream_parts(data):
+                    yield part
+
+    @staticmethod
+    def _stream_parts(data: dict) -> list[str]:
+        out = []
+        for cand in data.get("candidates", []):
+            for part in (cand.get("content") or {}).get("parts", []) or []:
+                if part.get("text"):
+                    out.append(part["text"])
+        return out

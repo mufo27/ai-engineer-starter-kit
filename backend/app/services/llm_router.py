@@ -197,3 +197,82 @@ class LLMRouter:
             completion_tokens=res.completion_tokens, latency_ms=int((time.perf_counter() - t0) * 1000),
             provider="mock", model="mock", task_type=task_type.value,
         )
+
+    async def stream_chat(
+        self,
+        messages: list[ChatMessage],
+        *,
+        task: TaskType | None = None,
+        preferred_model: str | None = None,
+    ):
+        """Async generator yielding {'type':'delta','text':...} then {'type':'final','result':LLMResult}."""
+        prompt = messages[-1].content if messages else ""
+        task_type = classify_task(prompt, force=task)
+
+        if preferred_model and preferred_model in self.catalog:
+            candidates = [self.catalog[preferred_model]]
+        else:
+            candidates = self._candidates(task_type)
+        if not candidates:
+            if self.strict:
+                raise NoProviderAvailableError("No healthy provider (strict mode)",
+                                               detail={"task": task_type.value})
+            candidates = [MOCK]
+
+        last_err: Exception | None = None
+        for spec in candidates:
+            provider = self.registry.get(spec.provider)
+            breaker = self.breakers.get(spec.provider)
+            if provider is None or not breaker.allow():
+                continue
+            try:
+                t0 = time.perf_counter()
+                acc: list[str] = []
+                if hasattr(provider, "astream"):
+                    async for piece in provider.astream(
+                        messages, model=spec.model, max_output_tokens=spec.max_output_tokens
+                    ):
+                        acc.append(piece)
+                        yield {"type": "delta", "text": piece}
+                else:
+                    res = await provider.complete(
+                        messages, model=spec.model, max_output_tokens=spec.max_output_tokens
+                    )
+                    acc.append(res.text)
+                    yield {"type": "delta", "text": res.text}
+                text = "".join(acc)
+                breaker.record_success()
+                result = LLMResult(
+                    text=text, spec=spec, prompt_tokens=estimate_tokens(prompt),
+                    completion_tokens=estimate_tokens(text), latency_ms=int((time.perf_counter() - t0) * 1000),
+                    provider=spec.provider, model=spec.model, task_type=task_type.value,
+                )
+                yield {"type": "final", "result": result}
+                return
+            except Exception as exc:  # try next candidate
+                breaker.record_failure()
+                last_err = exc
+                continue
+
+        if self.strict:
+            raise NoProviderAvailableError("All streaming providers failed",
+                                           detail={"task": task_type.value, "last_error": str(last_err)})
+        mock = self.registry.get("mock")
+        if mock is None:
+            raise NoProviderAvailableError("No provider and no mock registered")
+        t0 = time.perf_counter()
+        acc = []
+        if hasattr(mock, "astream"):
+            async for piece in mock.astream(messages, model="mock"):
+                acc.append(piece)
+                yield {"type": "delta", "text": piece}
+        else:
+            res = await mock.complete(messages, model="mock")
+            acc.append(res.text)
+            yield {"type": "delta", "text": res.text}
+        text = "".join(acc)
+        yield {"type": "final", "result": LLMResult(
+            text=text, spec=MOCK, prompt_tokens=estimate_tokens(prompt), completion_tokens=estimate_tokens(text),
+            latency_ms=int((time.perf_counter() - t0) * 1000), provider="mock", model="mock",
+            task_type=task_type.value,
+        )}

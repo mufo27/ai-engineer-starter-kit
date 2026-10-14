@@ -57,9 +57,17 @@ async def chat(body: ChatIn, request: Request, principal: PrincipalDep) -> ChatO
     budget = body.tenant_budget or _settings.default_token_budget
     await services.usage.assert_budget(principal.tenant_id, budget)
 
-    # 4) route + call (retry/circuit-breaker live in the router)
-    result = await services.router.chat(body.messages, task=body.task, preferred_model=body.model)
+    # 4) route + call (retry/circuit-breaker live in the router), wrapped in a trace
     rid = request_id()
+    trace = services.tracer.start("chat", user_id=principal.tenant_id, metadata={"request_id": rid})
+    with trace.span("llm"):
+        result = await services.router.chat(body.messages, task=body.task, preferred_model=body.model)
+    trace.generation(
+        name="chat", model=result.model, provider=result.provider,
+        prompt_tokens=result.prompt_tokens, completion_tokens=result.completion_tokens,
+        cost_usd=result.cost_usd, task_type=result.task_type,
+    )
+    trace.end()
 
     # 5) record usage for cost accounting
     await services.usage.record(

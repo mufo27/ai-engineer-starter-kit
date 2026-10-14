@@ -23,6 +23,7 @@ from app.core.rate_limit import (
     MonthlyQuota,
     RedisRateLimiter,
 )
+from app.core.tracing import Tracer, build_tracer
 from app.services.embeddings import build_embedder
 from app.services.llm_router import LLMRouter
 from app.services.prompt_store import InMemoryPromptStore, PromptStore
@@ -50,6 +51,7 @@ class Services:
     vectorstore: VectorStore
     prompts: PromptStore
     rag: RAGService
+    tracer: Tracer
 
 
 def _build_registry() -> ProviderRegistry:
@@ -128,6 +130,7 @@ def build_services(redis_client=None, *, use_sql: bool = False) -> Services:
     vectorstore: VectorStore = PgVectorStore() if use_sql else InMemoryVectorStore()
     prompts: PromptStore = InMemoryPromptStore()  # self-seeds the default RAG prompt
     rag = RAGService(embedder=embedder, store=vectorstore, prompts=prompts, router=router)
+    tracer = build_tracer(_settings)
 
     return Services(
         router=router,
@@ -139,6 +142,7 @@ def build_services(redis_client=None, *, use_sql: bool = False) -> Services:
         vectorstore=vectorstore,
         prompts=prompts,
         rag=rag,
+        tracer=tracer,
     )
 
 

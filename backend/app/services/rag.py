@@ -158,3 +158,50 @@ class RAGService:
             prompt_tokens=llm.prompt_tokens, completion_tokens=llm.completion_tokens,
             cost_usd=round(llm.cost_usd, 8), latency_ms=llm.latency_ms,
         )
+
+    async def ask_stream(
+        self,
+        *,
+        tenant_id: str,
+        question: str,
+        k: int = 4,
+        prompt_name: str = "rag_default",
+        prompt_version: int | None = None,
+    ):
+        """Yield {'type':'citations'}, then {'type':'delta'}, then {'type':'final','result':AskResult}."""
+        qvec = (await self.embedder.embed([question]))[0]
+        raw = await self.store.search(query_vec=qvec, query_text=question, tenant_id=tenant_id, k=k)
+        results = rerank(question, raw)[:k]
+        citations = [
+            Citation(marker=i + 1, chunk_id=r.chunk_id, document_id=r.document_id,
+                     snippet=_snippet(r.content), score=round(r.score, 4))
+            for i, r in enumerate(results)
+        ]
+        context = "\n\n".join(f"[{c.marker}] {r.content}" for c, r in zip(citations, results, strict=True)) \
+            if results else "(no context found)"
+        tpl = await self.prompts.get(name=prompt_name, version=prompt_version)
+        if tpl is None:
+            prompt_text = f"Answer using the context.\n\nContext:\n{context}\n\nQuestion: {question}"
+            used_name, used_version = prompt_name, 0
+        else:
+            prompt_text = tpl.render(context=context, question=question)
+            used_name, used_version = tpl.name, tpl.version
+
+        yield {
+            "type": "citations",
+            "citations": [c.__dict__ for c in citations],
+            "retrieved": len(results),
+            "prompt_name": used_name,
+            "prompt_version": used_version,
+        }
+        async for ev in self.router.stream_chat([ChatMessage(role="user", content=prompt_text)], task=TaskType.SIMPLE):
+            if ev["type"] == "delta":
+                yield {"type": "delta", "text": ev["text"]}
+            else:
+                llm = ev["result"]
+                yield {"type": "final", "result": AskResult(
+                    answer=llm.text, citations=citations, prompt_name=used_name, prompt_version=used_version,
+                    retrieved=len(results), provider=llm.provider, model=llm.model, task_type=llm.task_type,
+                    prompt_tokens=llm.prompt_tokens, completion_tokens=llm.completion_tokens,
+                    cost_usd=round(llm.cost_usd, 8), latency_ms=llm.latency_ms,
+                )}

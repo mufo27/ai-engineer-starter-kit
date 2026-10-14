@@ -35,3 +35,14 @@ class OpenAICompatProvider:
             prompt_tokens=ptok if ptok is not None else estimate_tokens(prompt),
             completion_tokens=ctok if ctok is not None else estimate_tokens(text),
         )
+
+    async def astream(self, messages, *, model, max_output_tokens: int = 1024):
+        stream = await self._client.chat.completions.create(
+            model=model,
+            messages=[{"role": m.role, "content": m.content} for m in messages],
+            max_tokens=max_output_tokens,
+            stream=True,
+        )
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content

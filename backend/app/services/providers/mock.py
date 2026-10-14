@@ -20,3 +20,10 @@ class MockProvider:
             prompt_tokens=estimate_tokens(prompt),
             completion_tokens=estimate_tokens(reply),
         )
+
+    async def astream(self, messages, *, model, max_output_tokens: int = 1024):
+        """Yield the mock reply word-by-word to exercise the SSE path without a key."""
+        prompt = messages[-1].content if messages else ""
+        reply = f"[mock:{model}] echo({len(prompt)} chars)"
+        for word in reply.split(" "):
+            yield word + " "
