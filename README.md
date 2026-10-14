@@ -7,6 +7,8 @@
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue)
 ![Next.js 14](https://img.shields.io/badge/next.js-14-black)
 ![pgvector](https://img.shields.io/badge/pgvector-16-12b76a)
+![Swagger](https://img.shields.io/badge/docs-Swagger-green)
+![i18n](https://img.shields.io/badge/i18n-EN%20%7C%20TH-blue)
 
 Everything the boring-but-critical parts of an AI product need — already wired, tested,
 and deployable:
@@ -21,7 +23,10 @@ and deployable:
 - **Cost tracking** — per-call token + USD accounting with a **fail-closed** monthly budget.
 - **Multi-tenant auth** — hashed API keys + short-lived JWTs with per-key scopes.
 - **Observability** — Langfuse-style tracing (opt-in), structured JSON logs, request-id, Prometheus `/metrics`.
-- **A/B eval dashboard** — Next.js + Tailwind (Paypers-style) to compare prompt versions side by side.
+- **Interactive dashboard** — Next.js + Tailwind (Paypers-style) with 5 live sections:
+  Dashboard (+ chat playground), A/B Eval, Traces, Cost, Settings — with **dark/light mode**
+  and **Thai/English** language toggle.
+- **Swagger / OpenAPI** — interactive API docs at `/docs` with an `x-api-key` **Authorize** button.
 - **Deploy-ready** — Docker Compose (dev) + Helm chart with HPA + Ingress (prod) + GitHub Actions CI/CD.
 
 **Design principle — fail-closed:** if the system can't serve a request safely (no provider,
@@ -64,7 +69,25 @@ flowchart LR
 Full design rationale, trade-offs, failure modes, scaling path and threat model:
 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
+## Dashboard
+
+A Next.js console (http://localhost:3000) with five live sections, all talking to the API:
+
+| Section | What it does |
+|---|---|
+| **Dashboard** | System health + a chat playground that calls `/v1/chat` and shows the chosen provider, model and cost |
+| **A/B Eval** | Compare two prompt versions over the golden set (mock or live provider) |
+| **Traces** | Recent request traces — spans, generations, tokens, cost (from `/v1/traces`) |
+| **Cost** | Per-tenant token usage, spend and circuit-breaker health (from `/v1/usage`) |
+| **Settings** | API base/key, theme and language |
+
+- **Dark / light mode** — Tailwind class-based theme with CSS-variable tokens; persisted, no flash.
+- **Thai / English** — full i18n dictionary with a one-click language toggle; persisted.
+
 ## API
+
+Interactive docs: **Swagger UI** at **http://localhost:8000/docs** (with an `x-api-key`
+**Authorize** button) and **ReDoc** at **/redoc**.
 
 | Method | Path | Scope | Description |
 |---|---|---|---|
@@ -79,6 +102,7 @@ Full design rationale, trade-offs, failure modes, scaling path and threat model:
 | GET | `/v1/prompts/{name}` | `documents` | list versions + active |
 | POST | `/v1/prompts/{name}/activate` | `documents` | promote/rollback active version |
 | POST | `/v1/eval/compare` | `eval` | A/B two prompt versions over the golden set |
+| GET | `/v1/traces` | `traces` | recent request traces (spans + generations + cost) |
 | GET | `/v1/usage` | `usage` | per-tenant token/cost summary + breaker health |
 
 Auth: send `x-api-key: <key>` or `Authorization: Bearer <jwt>`. `dev-key-123` is an
@@ -90,14 +114,14 @@ in-memory demo key (development only).
 cd backend
 python -m venv .venv && source .venv/Scripts/activate   # Windows (Git Bash)
 pip install -e ".[dev]"
-pytest -q            # 72 tests, no DB/Redis/network required
+pytest -q            # 74 tests, no DB/Redis/network required
 ruff check app tests
 python ../eval/run.py --min-score 0.8   # RAG eval gate (offline, mock)
 ```
 
 ## Testing & quality
 
-- **72 tests** (unit + integration + API) run without infrastructure via in-memory stores.
+- **74 tests** (unit + integration + API) run without infrastructure via in-memory stores.
 - **Ruff** lint + import-sort, **mypy** type check.
 - **Eval gate**: CI fails if mean RAG `recall@k` drops below 0.8.
 - **Live verification**: `docker compose up` + `make demo` exercise the real request path
