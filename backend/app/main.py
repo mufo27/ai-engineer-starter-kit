@@ -78,11 +78,29 @@ async def lifespan(app: FastAPI):
         await redis_client.aclose()
 
 
+OPENAPI_TAGS = [
+    {"name": "chat", "description": "Routed chat completions with cost + provider selection."},
+    {"name": "ask", "description": "Grounded RAG question answering with citations (also SSE streaming)."},
+    {"name": "documents", "description": "Ingest and list documents for the RAG index."},
+    {"name": "prompts", "description": "Prompt versioning: create, list, activate/rollback."},
+    {"name": "eval", "description": "A/B compare two prompt versions over the golden set."},
+    {"name": "traces", "description": "Recent request traces (spans + generations + cost)."},
+    {"name": "usage", "description": "Per-tenant token usage, spend, and circuit-breaker health."},
+    {"name": "metrics", "description": "Prometheus metrics exposition."},
+]
+
 app = FastAPI(
     title="AI Engineer Starter Kit",
     version="0.1.0",
-    description="Production-grade LLM router + RAG + cost tracking + multi-tenant auth",
+    description=(
+        "A production-grade scaffold for LLM apps: multi-provider **LLM router** "
+        "(OpenAI / Anthropic / Gemini / any OpenAI-compatible), **hybrid RAG** with citations, "
+        "**prompt versioning**, an **eval harness**, **cost tracking**, and **multi-tenant auth**.\n\n"
+        "Design principle: **fail-closed** — the system refuses rather than fabricating a response "
+        "or over-billing. Authenticate with an `x-api-key` header (click **Authorize** above)."
+    ),
     lifespan=lifespan,
+    openapi_tags=OPENAPI_TAGS,
 )
 
 app.add_middleware(
@@ -123,3 +141,27 @@ app.include_router(prompts.router)
 app.include_router(eval_router.router)
 app.include_router(metrics.router)
 app.include_router(traces.router)
+
+
+_custom_openapi = app.openapi
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = _custom_openapi()
+    components = schema.setdefault("components", {})
+    schemes = components.setdefault("securitySchemes", {})
+    schemes["ApiKeyAuth"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Tenant API key (e.g. dev-key-123 in development).",
+    }
+    # Apply globally; /health, /metrics, /docs stay open via their own handling.
+    schema["security"] = [{"ApiKeyAuth": []}]
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = custom_openapi

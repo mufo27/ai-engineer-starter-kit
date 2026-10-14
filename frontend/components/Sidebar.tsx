@@ -4,25 +4,27 @@ import { IconBeaker, IconCoin, IconDashboard, IconSettings, IconTrace } from "./
 
 export type Section = "dashboard" | "eval" | "traces" | "cost" | "settings";
 
-const nav: { id: Section; label: string; icon: typeof IconDashboard }[] = [
-  { id: "dashboard", label: "Dashboard", icon: IconDashboard },
-  { id: "eval", label: "A/B Eval", icon: IconBeaker },
-  { id: "traces", label: "Traces", icon: IconTrace },
-  { id: "cost", label: "Cost", icon: IconCoin },
-  { id: "settings", label: "Settings", icon: IconSettings },
+const nav: { id: Section; key: string; icon: typeof IconDashboard }[] = [
+  { id: "dashboard", key: "nav.dashboard", icon: IconDashboard },
+  { id: "eval", key: "nav.eval", icon: IconBeaker },
+  { id: "traces", key: "nav.traces", icon: IconTrace },
+  { id: "cost", key: "nav.cost", icon: IconCoin },
+  { id: "settings", key: "nav.settings", icon: IconSettings },
 ];
 
 export default function Sidebar({
   active,
   onSelect,
+  t,
 }: {
   active: Section;
   onSelect: (s: Section) => void;
+  t: (k: string) => string;
 }) {
   return (
     <aside
       className="hidden md:flex flex-col w-60 shrink-0 border-r"
-      style={{ borderColor: "var(--line)", background: "#fff", minHeight: "100vh" }}
+      style={{ borderColor: "var(--line)", background: "var(--panel)", minHeight: "100vh" }}
     >
       <div className="flex items-center gap-2 px-5 h-16 border-b" style={{ borderColor: "var(--line)" }}>
         <div
@@ -32,8 +34,8 @@ export default function Sidebar({
           K
         </div>
         <div className="leading-tight">
-          <div className="font-semibold text-sm">AI Engineer Kit</div>
-          <div className="text-xs" style={{ color: "var(--muted)" }}>Eval console</div>
+          <div className="font-semibold text-sm">{t("brand.name")}</div>
+          <div className="text-xs" style={{ color: "var(--muted)" }}>{t("brand.tag")}</div>
         </div>
       </div>
       <nav className="p-3 flex flex-col gap-1">
@@ -55,7 +57,7 @@ export default function Sidebar({
               }}
             >
               <Icon />
-              {item.label}
+              {t(item.key)}
             </button>
           );
         })}
@@ -63,9 +65,9 @@ export default function Sidebar({
       <div className="mt-auto p-4">
         <div className="card p-3 text-xs" style={{ color: "var(--muted)" }}>
           <div className="flex items-center gap-2 font-semibold" style={{ color: "var(--ink)" }}>
-            <span className="w-2 h-2 rounded-full" style={{ background: "var(--brand)" }} /> Backend online
+            <span className="w-2 h-2 rounded-full" style={{ background: "var(--brand)" }} /> {t("backend.online")}
           </div>
-          <div className="mt-1">FastAPI · pgvector · Redis</div>
+          <div className="mt-1">{t("backend.stack")}</div>
         </div>
       </div>
     </aside>
